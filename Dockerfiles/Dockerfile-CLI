@@ -1,0 +1,53 @@
+FROM ubuntu:20.04
+MAINTAINER Shaobo He <polarishehn@gmail.com>
+
+ARG hostuid 
+ENV HOMEDIR /home/user
+ENV INSTALLDIR $HOMEDIR/sgxray/install
+ENV BOOGIEDIR $INSTALLDIR/smack-deps/boogie
+ENV CORRALDIR $INSTALLDIR/smack-deps/corral
+ENV Z3DIR $INSTALLDIR/smack-deps/z3
+ENV BOOGIEVER 2.8.26 
+ENV CORRALVER 1.0.17
+ENV Z3VER 4.8.10
+ENV Z3LINK "https://github.com/Z3Prover/z3/releases/download/z3-$Z3VER/z3-$Z3VER-x64-ubuntu-18.04.zip"
+
+RUN apt-get update && \
+      apt-get -y install \
+      software-properties-common \
+      wget \
+      sudo \
+      unzip
+
+# Install LLVM 11
+RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    add-apt-repository "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-11 main" && \
+    wget -q https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
+    dpkg -i packages-microsoft-prod.deb && \
+    rm -f packages-microsoft-prod.deb && \
+    apt-get update && apt-get install -y clang-11 dotnet-sdk-3.1
+
+# Borrowed from JFS
+# Create `user` user for container with password `user`.  and give it
+# password-less sudo access
+RUN useradd -m user -u $hostuid  && \
+    echo user:user | chpasswd && \
+    cp /etc/sudoers /etc/sudoers.bak && \
+    echo 'user  ALL=(root) NOPASSWD: ALL' >> /etc/sudoers
+
+USER user
+
+# Add the current directory to `/home/user/sgxray`
+#ADD --chown=user . $HOMEDIR
+
+# Add zip
+COPY distro/sgxray-distro.zip $HOMEDIR
+
+# Install bin
+RUN (cd $HOMEDIR && unzip sgxray-distro.zip && rm sgxray-distro.zip && echo "source /home/user/sgxray/install/sgxray.environment" >> ~/.bashrc)
+
+# Intall deps
+RUN (cd $HOMEDIR && dotnet tool install Boogie --tool-path $BOOGIEDIR --version $BOOGIEVER && dotnet tool install Corral --tool-path $CORRALDIR --version $CORRALVER && wget $Z3LINK -O z3-downloaded.zip && unzip -o z3-downloaded.zip -d z3-extracted && mkdir -p $Z3DIR && mv -f --backup=numbered z3-extracted/z3-*/* $Z3DIR && rm -rf z3-downloaded.zip z3-extracted)
+
+# Set the work directory
+WORKDIR $HOMEDIR
